@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <stdexcept>
 #include "../include/harppi.h"
 
 parameters::parameters(char *file) {
