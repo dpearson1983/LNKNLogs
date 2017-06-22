@@ -6,6 +6,7 @@
 #include <random>
 #include <limits>
 #include <cmath>
+#include <stdexcept>
 #include <fftw3.h>
 #include <gsl/gsl_spline.h>
 #include "../include/tpods.h"
