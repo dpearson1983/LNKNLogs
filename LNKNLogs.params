@@ -1,0 +1,29 @@
+# Grid properties
+int Nx = 512
+int Ny = 512
+int Nz = 512
+double Lx = 1024.0
+double Ly = 1024.0
+double Lz = 1024.0
+
+# Galaxy properties
+double b = 2.1
+double f = 0.75
+double nbar = 0.0004
+
+# Output file specifiers
+string mock_base = LNKNLogs_
+string mock_ext = dat
+int start_num = 1
+int num_mocks = 10
+int digits = 4
+
+# FFTW wisdom file name
+string wisdom_file = FFTW_Wisdom.dat
+
+# Input power spectrum file
+string in_pk_file = camb_matterpower_z0.65.dat
+
+# Multi-thread parameters
+bool max_threads = true
+int num_threads = 8

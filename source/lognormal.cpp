@@ -31,7 +31,7 @@ std::vector<double> fft_freq(int N, double L) {
 // This fills an initial grid with the input power spectrum with plane-parallel anisotropies in the
 // z direction.
 void fill_initial_Pk_grid(std::string in_pk_file, vec3<int> N, vec3<double> L, std::vector<double> &kx, 
-                          std::vector<double> &ky, std::vector<double> &kz, std::vector<fftw_complex> &dk, 
+                          std::vector<double> &ky, std::vector<double> &kz, fftw_complex *dk, 
                           double b, double f) {
     // Setup input filestream
     std::ifstream fin;
@@ -90,8 +90,56 @@ void fill_initial_Pk_grid(std::string in_pk_file, vec3<int> N, vec3<double> L, s
     gsl_interp_accel_free(acc);
 }
 
+void normalize_dk_initial(fftw_complex *dk_i, int N, int N_tot) {
+    for (int i = 0; i < N; ++i) {
+        if (dk_i[i][0] > 0) {
+            dk_i[i][0] /= N_tot;
+            dk_i[i][1] = 0.0;
+        } else {
+            dk_i[i][0] = 0.0;
+            dk_i[i][1] = 0.0;
+        }
+    }
+}
+
+std::vector<double> get_dk_initial(vec3<int> N, vec3<double> L, std::string wisdom_file, int nthreads,
+                    std::vector<double> &kx, std::vector<double> &ky, std::vector<double> &kz, 
+                    double b, double f, std::string in_pk_file) {
+    int N_pad = N.x*N.y*2*(N.z/2 + 1);
+    int N_rft = N.x*N.y*(N.z/2 + 1);
+    int N_tot = N.x*N.y*N.z;
+    fftw_init_threads();
+    std::vector<double> dk_i(N_pad);
+    
+    fftw_import_wisdom_from_filename(wisdom_file.c_str());
+    fftw_plan_with_nthreads(nthreads);
+    fftw_plan dk2dr = fftw_plan_dft_c2r_3d(N.x, N.y, N.z, (fftw_complex *)dk_i.data(), dk_i.data(),
+                                            FFTW_MEASURE);
+    fftw_plan dr2dk = fftw_plan_dft_r2c_3d(N.x, N.y, N.z, dk_i.data(), (fftw_complex *)dk_i.data(),
+                                            FFTW_MEASURE);
+    fftw_export_wisdom_to_filename(wisdom_file.c_str());
+    
+    fill_initial_Pk_grid(in_pk_file, N, L, kx, ky, kz, (fftw_complex *)dk_i.data(), b, f);
+    
+    fftw_execute(dk2dr);
+    
+    for (int i = 0; i < N_pad; ++i) {
+        if (i < N_tot) dk_i[i] = log(1.0 + dk_i[i]);
+        else dk_i[i] = 0.0;
+    }
+    
+    fftw_execute(dr2dk);
+    
+    normalize_dk_initial((fftw_complex *)dk_i.data(), N_rft, N_tot);
+    
+    fftw_destroy_plan(dk2dr);
+    fftw_destroy_plan(dr2dk);
+    
+    return dk_i;
+}
+
 // Fills a cube with a Gaussian random realizations of the initial lognormal field.
-void get_dk_realization(std::vector<fftw_complex> &dk, std::vector<fftw_complex> &dk_i, 
+void get_dk_realization(fftw_complex *dk, fftw_complex *dk_i, 
                         std::vector<double> &kx, std::vector<double> &ky, std::vector<double> &kz,
                         vec3<int> N, vec3<double> L) {
     // Setup the needed random number generator. This uses the C++ random standard library which
@@ -131,9 +179,8 @@ void get_dk_realization(std::vector<fftw_complex> &dk, std::vector<fftw_complex>
 
 // This function can be used to create a scaled version of the random realization for a tracer with 
 // a different bias.
-void scale_dk_realization(std::vector<fftw_complex> &dk_1, std::vector<fftw_complex> &dk_2, 
-                          std::vector<double> &ratio) {
-    int N = dk_1.size();
+void scale_dk_realization(fftw_complex *dk_1, fftw_complex *dk_2, 
+                          std::vector<double> &ratio, int N) {
     for (int i = 0; i < N; ++i) {
         dk_2[i][0] = ratio[i]*dk_1[i][0];
         dk_2[i][1] = ratio[i]*dk_1[i][1];
