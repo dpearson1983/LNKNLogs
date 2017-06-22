@@ -4,6 +4,7 @@ CXXOPTIMIZE = -march=native -O3
 DEPS = include/harppi.h include/lognormal.h include/tpods.h include/constants.h
 
 lnknlogs: main.cpp obj/lognormal.o obj/harppi.o $(DEPS)
+	mkdir obj
 	$(CXX) $(CXXFLAGS) $(CXXOPTIMIZE) -o LNKNLogs main.cpp obj/harppi.o obj/lognormal.o
 	
 obj/harppi.o: source/harppi.cpp include/harppi.h
