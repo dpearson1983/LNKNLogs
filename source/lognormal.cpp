@@ -16,23 +16,34 @@ std::vector<double> fft_freq(int N, double L) {
     std::vector<double> k; // Declare this way with reserve for potential speed up
     k.reserve(N);
     double dk = (2.0*pi)/L; // Fundamental frequency
+    
+    // For the first half, the frequencies are positive and increasing
     for (int i = 0; i <= N/2; ++i)
         k.push_back(i*dk);
+    
+    // For the second half, the frequencies are negative, starting  and -k_max and going towards zero
     for (int i = N/2 + 1; i < N; ++i)
         k.push_back((i - N)*dk);
+    
     return k;
 }
 
+// This fills an initial grid with the input power spectrum with plane-parallel anisotropies in the
+// z direction.
 void fill_initial_Pk_grid(std::string in_pk_file, vec3<int> N, vec3<double> L, std::vector<double> &kx, 
                           std::vector<double> &ky, std::vector<double> &kz, std::vector<fftw_complex> &dk, 
                           double b, double f) {
+    // Setup input filestream
     std::ifstream fin;
     
-    double V = L.x*L.y*L.z;
+    double V = L.x*L.y*L.z; // Volume of the grid
     
+    // Vectors to store the input power spectrum data.
     std::vector<double> kin;
     std::vector<double> pin;
     
+    // Check if the matter power specturm file exists, and if so, open it and read in the data. Otherwise,
+    // throw an error and exit to prevent memory over-run problems.
     if (std::ifstream(in_pk_file)) {
         fin.open(in_pk_file.c_str(), std::ios::in);
         while (!fin.eof()) {
@@ -50,11 +61,13 @@ void fill_initial_Pk_grid(std::string in_pk_file, vec3<int> N, vec3<double> L, s
         throw std::runtime_error(message.str());
     }
     
+    // Setup a cubic spline to distribute the input matter power to the grid
     gsl_spline *Pk = gsl_spline_alloc(gsl_interp_cspline, pin.size());
     gsl_interp_accel *acc = gsl_interp_accel_alloc();
     
     gsl_spline_init(Pk, kin.data(), pin.data(), pin.size());
     
+    // Loop over the grid to distribute the input matter power with bias and anisotropy added in.
     for (int i = 0; i < N.x; ++i) {
         for (int j = 0; j < N.y; ++j) {
             for (int k = 0; k <= N.z/2; ++k) {
@@ -77,24 +90,31 @@ void fill_initial_Pk_grid(std::string in_pk_file, vec3<int> N, vec3<double> L, s
     gsl_interp_accel_free(acc);
 }
 
+// Fills a cube with a Gaussian random realizations of the initial lognormal field.
 void get_dk_realization(std::vector<fftw_complex> &dk, std::vector<fftw_complex> &dk_i, 
                         std::vector<double> &kx, std::vector<double> &ky, std::vector<double> &kz,
                         vec3<int> N, vec3<double> L) {
-    std::random_device seeder;
-    std::mt19937_64 gen(seeder());
-    std::normal_distribution<double> dist(0.0, 1.0);
+    // Setup the needed random number generator. This uses the C++ random standard library which
+    // requires C++11 or later.
+    std::random_device seeder; // Random number generator that uses system entropy, use for seeding
+    std::mt19937_64 gen(seeder()); // Mersenne Twister pseudo-random number generator
+    std::normal_distribution<double> dist(0.0, 1.0); // Normal distribution centered on zero, with
+                                                     // sigma = 1
     
+    // Loop over the grid to get the random realization.
     for (int i = 0; i < N.x; ++i) {
         int i2 = (2*N.x - i) % N.x;
         for (int j = 0; j < N.y; ++j) {
             int j2 = (2*N.y - j) % N.y;
             for (int k = 0; k <= N.z/2; ++k) {
                 int index1 = k + (N.z/2 + 1)*(j + N.y*i);
+                
+                // The following ensures that after the inverse FFT the resulting field is real
                 if ((i == 0 || i == N.x/2) && (j == 0 || j == N.y/2) && (k == 0 || k == N.z/2)) {
                     dk[index1][0] = dist(gen)*sqrt(dk_i[index1][0]);
                     dk[index1][1] = 0.0;
                 } else if (k == 0 || k == N.z/2) {
-                    int index2 = k + (N.z/2 + 1)*(j2 + N.y*i2);
+                    int index2 = k + (N.z/2 + 1)*(j2 + N.y*i2); // Point where k_1 = -k_2
                     dk[index1][0] = dist(gen)*sqrt(dk_i[index1][0]/2);
                     dk[index1][1] = dist(gen)*sqrt(dk_i[index1][0]/2);
                     
@@ -109,6 +129,8 @@ void get_dk_realization(std::vector<fftw_complex> &dk, std::vector<fftw_complex>
     }
 }
 
+// This function can be used to create a scaled version of the random realization for a tracer with 
+// a different bias.
 void scale_dk_realization(std::vector<fftw_complex> &dk_1, std::vector<fftw_complex> &dk_2, 
                           std::vector<double> &ratio) {
     int N = dk_1.size();
@@ -118,17 +140,22 @@ void scale_dk_realization(std::vector<fftw_complex> &dk_1, std::vector<fftw_comp
     }
 }
 
+// Create the catalog by Poisson sampling the real-space density field
 void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, double b, double nbar,
                           std::string out_file) {
+    // Output file stream
     std::ofstream fout;
     
+    // Setup some random number generator stuff
     std::random_device seeder;
     std::mt19937_64 gen(seeder());
-    std::uniform_real_distribution<double> dist(0.0, 1.0);
+    std::uniform_real_distribution<double> dist(0.0, 1.0); // Used for placing galaxies within cell
     
+    // Calculate the grid spacing and the average number of galaxies per cell
     vec3<double> delr = {L.x/double(N.x), L.y/double(N.y), L.z/double(N.z)};
     double n = nbar*delr.x*delr.y*delr.z;
     
+    // Find the mean and variance of the real-space field
     int N_tot = dr.size();
     double mean = 0.0;
     for (int i = 0; i < N_tot; ++i)
@@ -142,8 +169,9 @@ void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, 
     }
     variance /= double(N_tot - 1.0);
     
-    fout.open(out_file.c_str(), std::ios::app);
-    fout.precision(std::numeric_limits<double>::digits10);
+    // Loop over the grid and Poisson sample to create the catalog
+    fout.open(out_file.c_str(), std::ios::app); // Open output file in append mode for multi-tracer case
+    fout.precision(std::numeric_limits<double>::digits10); // Output full precision
     for (int i = 0; i < N.x; ++i) {
         double x_min = i*delr.x;
         for (int j = 0; j < N.y; ++j) {
@@ -152,10 +180,11 @@ void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, 
                 double z_min = k*delr.z;
                 int index = k + N.z*(j + N.x*i);
                 
-                double density = n*exp(dr[index] - variance/2.0);
-                std::poisson_distribution<int> p_dist(density);
-                int num_gals = p_dist(gen);
+                double density = n*exp(dr[index] - variance/2.0); // Exponentiate the field
+                std::poisson_distribution<int> p_dist(density); // Poisson distribution to sample from
+                int num_gals = p_dist(gen); // Poisson sampling
                 
+                // Output the galaxies in that cell, distributed in a uniform random way within the cell.
                 for (int gal = 0; gal < num_gals; ++gal) {
                     fout << x_min + dist(gen)*delr.x << " " << y_min + dist(gen)*delr.y << " ";
                     fout << z_min + dist(gen)*delr.y << " " << b << " " << nbar << "\n";
