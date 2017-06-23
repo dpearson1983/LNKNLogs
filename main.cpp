@@ -51,17 +51,17 @@ int main(int argc, char *argv[]) {
     std::vector<double> kz = fft_freq(N.z, L.z);
     
     std::cout << "Getting the field for the random draws..." << std::endl;
-    std::vector<double> dk_i = get_dk_initial(N, L, p.gets("wisdom_file"), num_threads,
+    std::vector<fftw_complex> dk_i = get_dk_initial(N, L, p.gets("wisdom_file"), num_threads,
                                               kx, ky, kz, p.getd("b"), p.getd("f"), p.gets("in_pk_file"));
     
     std::cout << "Setting up Fourier transform plan..." << std::endl;
     fftw_init_threads();
-    std::vector<double> dk(N_pad);
+    std::vector<fftw_complex> dk(N_rft);
+    std::vector<double> dr(N_tot);
     
     fftw_import_wisdom_from_filename(p.gets("wisdom_file").c_str());
     fftw_plan_with_nthreads(num_threads);
-    fftw_plan dk2dr = fftw_plan_dft_c2r_3d(N.x, N.y, N.z, (fftw_complex *)dk.data(), dk.data(), 
-                                           FFTW_MEASURE);
+    fftw_plan dk2dr = fftw_plan_dft_c2r_3d(N.x, N.y, N.z, dk.data(), dr.data(), FFTW_MEASURE);
     fftw_export_wisdom_to_filename(p.gets("wisdom_file").c_str());
     
     for (int mock = p.geti("start_num"); mock < p.geti("start_num") + p.geti("num_mocks"); ++mock) {
@@ -69,11 +69,11 @@ int main(int argc, char *argv[]) {
         std::string mock_file = filename(p.gets("mock_base"), p.geti("digits"), mock, p.gets("mock_ext"));
         std::cout << "    Creating mock: " << mock_file << std::endl;
         
-        get_dk_realization((fftw_complex *)dk.data(), (fftw_complex *)dk_i.data(), kx, ky, kz, N, L);
+        get_dk_realization(dk, dk_i, kx, ky, kz, N, L);
         
         fftw_execute(dk2dr);
         
-        get_galaxies_from_dr(dk, N, L, p.getd("b"), p.getd("nbar"), mock_file);
+        get_galaxies_from_dr(dr, N, L, p.getd("b"), p.getd("nbar"), mock_file);
         std::cout << "    Time: " << omp_get_wtime() - start << " s" << std::endl;
     }
     
