@@ -14,8 +14,8 @@ double nbar = 0.0004
 # Output file specifiers
 string mock_base = mocks/LNKNLogs_
 string mock_ext = dat
-int start_num = 101
-int num_mocks = 300
+int start_num = 1
+int num_mocks = 10
 int digits = 4
 
 # FFTW wisdom file name
