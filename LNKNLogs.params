@@ -1,19 +1,27 @@
 # Grid properties
 int Nx = 512
-int Ny = 512
+int Ny = 1024
 int Nz = 512
-double Lx = 1024.0
-double Ly = 1024.0
-double Lz = 1024.0
+double Lx = 1792.0
+double Ly = 3584.0
+double Lz = 1792.0.0
+double x_min = -1822.95
+double y_min = -1832.92
+double z_min = -137.193
 
 # Galaxy properties
 double b = 2.1
 double f = 0.75
 double nbar = 0.0004
 
+# Cosmological parameters
+double H_0 = 67.74
+double Omega_M = 0.3089
+double Omega_L = 0.6911
+
 # Output file specifiers
 string mock_base = mocks/LNKNLogs_
-string mock_ext = dat
+string mock_ext = fits
 int start_num = 1
 int num_mocks = 10
 int digits = 4

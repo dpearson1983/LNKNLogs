@@ -31,8 +31,11 @@
 #include <stdexcept>
 #include <fftw3.h>
 #include <gsl/gsl_spline.h>
+#include "../include/lognormal.h"
 #include "../include/tpods.h"
 #include "../include/constants.h"
+#include "../include/file_io.h"
+#include "../include/cosmology.h"
 
 // Return a vector with the FFT frequencies based on the grid properties
 std::vector<double> fft_freq(int N, double L) {
@@ -207,9 +210,18 @@ void scale_dk_realization(std::vector<fftw_complex> &dk_1, std::vector<fftw_comp
     }
 }
 
+vec3<double> get_equatorial(vec3<double> cart, cosmology &cosmo) {
+    double r = sqrt(cart.x*cart.x + cart.y*cart.y + cart.z*cart.z);
+    vec3<double> equa;
+    equa.y = asin(cart.z/r);
+    equa.x = asin(cart.y/(r*cos(equa.y)));
+    equa.z = cosmo.get_redshift_from_comoving_distance(r);
+    return equa;
+}
+
 // Create the catalog by Poisson sampling the real-space density field
-void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, double b, double nbar,
-                          std::string out_file) {
+void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, vec3<double> r_min,
+                          double b, double nbar, cosmology &cosmo, std::string out_file) {
     // Output file stream
     std::ofstream fout;
     
@@ -236,9 +248,15 @@ void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, 
     }
     variance /= double(N_tot - 1.0);
     
+    std::vector<std::vector<double>> galaxies(8);
+    std::vector<std::string> col_names;
+    std::vector<std::string> col_forms;
+    std::vector<std::string> col_units;
+    get_DR12_column_info(col_names, col_forms, col_units);
+    
     // Loop over the grid and Poisson sample to create the catalog
-    fout.open(out_file.c_str(), std::ios::app); // Open output file in append mode for multi-tracer case
-    fout.precision(std::numeric_limits<double>::digits10); // Output full precision
+//     fout.open(out_file.c_str(), std::ios::app); // Open output file in append mode for multi-tracer case
+//     fout.precision(std::numeric_limits<double>::digits10); // Output full precision
     for (int i = 0; i < N.x; ++i) {
         double x_min = i*delr.x;
         for (int j = 0; j < N.y; ++j) {
@@ -253,11 +271,22 @@ void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, 
                 
                 // Output the galaxies in that cell, distributed in a uniform random way within the cell.
                 for (int gal = 0; gal < num_gals; ++gal) {
-                    fout << x_min + dist(gen)*delr.x << " " << y_min + dist(gen)*delr.y << " ";
-                    fout << z_min + dist(gen)*delr.y << " " << b << " " << nbar << "\n";
+                    double x = x_min + dist(gen)*delr.x;
+                    double y = y_min + dist(gen)*delr.y;
+                    double z = z_min + dist(gen)*delr.z;
+                    vec3<double> cart = {x + r_min.x, y + r_min.y, z + r_min.z};
+                    vec3<double> equa = get_equatorial(cart, cosmo);
+                    galaxies[0].push_back(equa.x);
+                    galaxies[1].push_back(equa.y);
+                    galaxies[2].push_back(equa.z);
+                    galaxies[3].push_back(nbar);
+                    galaxies[4].push_back(1.0);
+                    galaxies[5].push_back(1.0);
+                    galaxies[6].push_back(1.0);
+                    galaxies[7].push_back(1.0);
                 }
             }
         }
     }
-    fout.close();
+    write_fits_file(out_file, galaxies, col_names, col_forms, col_units);
 }

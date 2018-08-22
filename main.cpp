@@ -34,6 +34,7 @@
 #include "include/tpods.h"
 #include "include/harppi.h"
 #include "include/lognormal.h"
+#include "include/cosmology.h"
 
 // Function for generating sequential file names
 std::string filename(std::string base, int digits, int num, std::string ext);
@@ -53,8 +54,10 @@ int main(int argc, char *argv[]) {
     p.print();
     
     std::cout << "Doing some initial setup..." << std::endl;
+    cosmology cosmo(p.getd("H_0"), p.getd("Omega_M"), p.getd("Omega_L"));
     vec3<int> N = {p.geti("Nx"), p.geti("Ny"), p.geti("Nz")};
     vec3<double> L = {p.getd("Lx"), p.getd("Ly"), p.getd("Lz")};
+    vec3<double> r_min = {p.getd("x_min"), p.getd("y_min"), p.getd("z_min")};
     int N_tot = N.x*N.y*N.z;
     int N_pad = N.x*N.y*2*(N.z/2 + 1);
     int N_rft = N.x*N.y*(N.z/2 + 1);
@@ -97,7 +100,7 @@ int main(int argc, char *argv[]) {
         
         fftw_execute(dk2dr);
         
-        get_galaxies_from_dr(dr, N, L, p.getd("b"), p.getd("nbar"), mock_file);
+        get_galaxies_from_dr(dr, N, L, r_min, p.getd("b"), p.getd("nbar"), cosmo, mock_file);
         std::cout << "    Time: " << omp_get_wtime() - start << " s" << std::endl;
     }
     
