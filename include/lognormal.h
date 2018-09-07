@@ -6,6 +6,7 @@
 #include <fftw3.h>
 #include "tpods.h"
 #include "cosmology.h"
+#include "file_io.h"
 
 std::vector<double> fft_freq(int N, double L);
 
@@ -25,6 +26,6 @@ void scale_dk_realization(std::vector<fftw_complex> &dk_1, std::vector<fftw_comp
                           std::vector<double> &ratio, int N);
 
 void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, vec3<double> r_min,
-                          double b, double nbar, cosmology &cosmo, std::string out_file);
+                          double b, double nbar, cosmology &cosmo, std::string out_file, FileType type = dr12);
 
 #endif

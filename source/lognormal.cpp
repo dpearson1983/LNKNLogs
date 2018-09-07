@@ -37,6 +37,10 @@
 #include "../include/file_io.h"
 #include "../include/cosmology.h"
 
+#ifndef PI
+#define PI 3.1415926535897932384626433832795
+#endif
+
 // Return a vector with the FFT frequencies based on the grid properties
 std::vector<double> fft_freq(int N, double L) {
     std::vector<double> k; // Declare this way with reserve for potential speed up
@@ -210,18 +214,31 @@ void scale_dk_realization(std::vector<fftw_complex> &dk_1, std::vector<fftw_comp
     }
 }
 
+double arctangent(double x, double y) {
+    if (x < 0 && y < 0) {
+        return PI + atan(fabs(y)/fabs(x));
+    } else if (x < 0) {
+        return PI - atan(fabs(y)/fabs(x));
+    } else if (y < 0) {
+        return 2.0*PI - atan (fabs(y)/fabs(x));
+    } else {
+        return atan(fabs(y)/fabs(x));
+    }
+}
+
 vec3<double> get_equatorial(vec3<double> cart, cosmology &cosmo) {
     double r = sqrt(cart.x*cart.x + cart.y*cart.y + cart.z*cart.z);
     vec3<double> equa;
-    equa.y = asin(cart.z/r);
-    equa.x = asin(cart.y/(r*cos(equa.y)));
+    equa.y = atan2(cart.z, sqrt(cart.x*cart.x + cart.y*cart.y))*180.0/PI;
+    equa.x = atan2(cart.y, cart.x)*180.0/PI;
+    if (equa.x < 0) equa.x += 360.0;
     equa.z = cosmo.get_redshift_from_comoving_distance(r);
     return equa;
 }
 
 // Create the catalog by Poisson sampling the real-space density field
 void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, vec3<double> r_min,
-                          double b, double nbar, cosmology &cosmo, std::string out_file) {
+                          double b, double nbar, cosmology &cosmo, std::string out_file, FileType type) {
     // Output file stream
     std::ofstream fout;
     
@@ -235,7 +252,7 @@ void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, 
     double n = nbar*delr.x*delr.y*delr.z;
     
     // Find the mean and variance of the real-space field
-    int N_tot = dr.size();
+    unsigned long N_tot = dr.size();
     double mean = 0.0;
     for (int i = 0; i < N_tot; ++i)
         mean += dr[i];
@@ -247,46 +264,116 @@ void get_galaxies_from_dr(std::vector<double> &dr, vec3<int> N, vec3<double> L, 
         variance += (dr[i]*dr[i]);
     }
     variance /= double(N_tot - 1.0);
+    unsigned long totalGals = 0;
     
-    std::vector<std::vector<double>> galaxies(8);
-    std::vector<std::string> col_names;
-    std::vector<std::string> col_forms;
-    std::vector<std::string> col_units;
-    get_DR12_column_info(col_names, col_forms, col_units);
-    
-    // Loop over the grid and Poisson sample to create the catalog
-//     fout.open(out_file.c_str(), std::ios::app); // Open output file in append mode for multi-tracer case
-//     fout.precision(std::numeric_limits<double>::digits10); // Output full precision
-    for (int i = 0; i < N.x; ++i) {
-        double x_min = i*delr.x;
-        for (int j = 0; j < N.y; ++j) {
-            double y_min = j*delr.y;
-            for (int k = 0; k < N.z; ++k) {
-                double z_min = k*delr.z;
-                int index = k + N.z*(j + N.x*i);
-                
-                double density = n*exp(dr[index] - variance/2.0); // Exponentiate the field
-                std::poisson_distribution<int> p_dist(density); // Poisson distribution to sample from
-                int num_gals = p_dist(gen); // Poisson sampling
-                
-                // Output the galaxies in that cell, distributed in a uniform random way within the cell.
-                for (int gal = 0; gal < num_gals; ++gal) {
-                    double x = x_min + dist(gen)*delr.x;
-                    double y = y_min + dist(gen)*delr.y;
-                    double z = z_min + dist(gen)*delr.z;
-                    vec3<double> cart = {x + r_min.x, y + r_min.y, z + r_min.z};
-                    vec3<double> equa = get_equatorial(cart, cosmo);
-                    galaxies[0].push_back(equa.x);
-                    galaxies[1].push_back(equa.y);
-                    galaxies[2].push_back(equa.z);
-                    galaxies[3].push_back(nbar);
-                    galaxies[4].push_back(1.0);
-                    galaxies[5].push_back(1.0);
-                    galaxies[6].push_back(1.0);
-                    galaxies[7].push_back(1.0);
+    if (type == dr12) {
+        std::vector<std::vector<double>> galaxies(8);
+        std::vector<std::string> col_names;
+        std::vector<std::string> col_forms;
+        std::vector<std::string> col_units;
+        get_DR12_column_info(col_names, col_forms, col_units);
+        
+        // Loop over the grid and Poisson sample to create the catalog
+        //     fout.open(out_file.c_str(), std::ios::app); // Open output file in append mode for multi-tracer case
+        //     fout.precision(std::numeric_limits<double>::digits10); // Output full precision
+        for (int i = 0; i < N.x; ++i) {
+            double x_min = i*delr.x;
+            for (int j = 0; j < N.y; ++j) {
+                double y_min = j*delr.y;
+                for (int k = 0; k < N.z; ++k) {
+                    double z_min = k*delr.z;
+                    size_t index = k + N.z*(j + N.x*i);
+                    
+                    double density = n*exp(dr[index] - variance/2.0); // Exponentiate the field
+                    std::poisson_distribution<int> p_dist(density); // Poisson distribution to sample from
+                    int num_gals = p_dist(gen); // Poisson sampling
+                    totalGals += num_gals;
+                    
+                    // Output the galaxies in that cell, distributed in a uniform random way within the cell.
+                    for (int gal = 0; gal < num_gals; ++gal) {
+                        double x = x_min + dist(gen)*delr.x;
+                        double y = y_min + dist(gen)*delr.y;
+                        double z = z_min + dist(gen)*delr.z;
+                        vec3<double> cart = {x + r_min.x, y + r_min.y, z + r_min.z};
+                        vec3<double> equa = get_equatorial(cart, cosmo);
+                        galaxies[0].push_back(equa.x);
+                        galaxies[1].push_back(equa.y);
+                        galaxies[2].push_back(equa.z);
+                        galaxies[3].push_back(nbar);
+                        galaxies[4].push_back(1.0);
+                        galaxies[5].push_back(1.0);
+                        galaxies[6].push_back(1.0);
+                        galaxies[7].push_back(1.0);
+                    }
                 }
             }
         }
+        write_fits_file(out_file, galaxies, col_names, col_forms, col_units);
     }
-    write_fits_file(out_file, galaxies, col_names, col_forms, col_units);
+    
+    if (type == density_field) {
+        std::vector<double> delta(N.x*N.y*N.z);
+        vec3<double> pk_nbw = {0.0, 0.0, 0.0};
+        vec3<double> bk_nbw = {0.0, 0.0, 0.0};
+        // Loop over the grid and Poisson sample to create the catalog
+        //     fout.open(out_file.c_str(), std::ios::app); // Open output file in append mode for multi-tracer case
+        //     fout.precision(std::numeric_limits<double>::digits10); // Output full precision
+        for (int i = 0; i < N.x; ++i) {
+            double x_min = i*delr.x;
+            for (int j = 0; j < N.y; ++j) {
+                double y_min = j*delr.y;
+                for (int k = 0; k < N.z; ++k) {
+                    double z_min = k*delr.z;
+                    size_t index = k + N.z*(j + N.x*i);
+                    
+                    double density = n*exp(dr[index] - variance/2.0); // Exponentiate the field
+                    std::poisson_distribution<int> p_dist(density); // Poisson distribution to sample from
+                    int num_gals = p_dist(gen); // Poisson sampling
+                    totalGals += num_gals;
+                    // NOTE: Currently this assumes equal weights with those weights set to 1.
+                    pk_nbw.x += num_gals;
+                    pk_nbw.y += num_gals;
+                    pk_nbw.z += nbar*num_gals;
+                    
+                    bk_nbw.x += num_gals;
+                    bk_nbw.y += nbar*num_gals;
+                    bk_nbw.z += nbar*nbar*num_gals;
+                    delta[index] = num_gals;
+                }
+            }
+        }
+        std::cout << pk_nbw.x << " " << pk_nbw.y << " " << pk_nbw.z << "\n";
+        std::cout << bk_nbw.x << " " << bk_nbw.y << " " << bk_nbw.z << std::endl;
+        write_density_file(out_file, delta, N, L, r_min, pk_nbw, bk_nbw);
+    }
+    
+    if (type == lnknlog) {
+        std::ofstream fout(out_file);
+        fout.precision(std::numeric_limits<double>::digits10);
+        for (int i = 0; i < N.x; ++i) {
+            double x_min = i*delr.x;
+            for (int j = 0; j < N.y; ++j) {
+                double y_min = j*delr.y;
+                for (int k = 0; k < N.z; ++k) {
+                    double z_min = k*delr.z;
+                    size_t index = k + N.z*(j + N.x*i);
+                    
+                    double density = n*exp(dr[index] - variance/2.0); // Exponentiate the field
+                    std::poisson_distribution<int> p_dist(density); // Poisson distribution to sample from
+                    int num_gals = p_dist(gen); // Poisson sampling
+                    
+                    for (int gal = 0; gal < num_gals; ++gal) {
+                        double x = x_min + dist(gen)*delr.x;
+                        double y = y_min + dist(gen)*delr.y;
+                        double z = z_min + dist(gen)*delr.z;
+                        fout << x << " " << y << " " << z << " " << nbar << " " << b << " " << 1.0 << "\n";
+                        totalGals++;
+                    }
+                }
+            }
+        }
+        fout.close();
+    }
+    
+    std::cout << "Total number of galaxies: " << totalGals << std::endl;
 }

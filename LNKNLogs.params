@@ -4,14 +4,14 @@ int Ny = 1024
 int Nz = 512
 double Lx = 1792.0
 double Ly = 3584.0
-double Lz = 1792.0.0
+double Lz = 1792.0
 double x_min = -1822.95
 double y_min = -1832.92
 double z_min = -137.193
 
 # Galaxy properties
 double b = 2.1
-double f = 0.75
+double f = 0.0
 double nbar = 0.0004
 
 # Cosmological parameters
@@ -20,10 +20,11 @@ double Omega_M = 0.3089
 double Omega_L = 0.6911
 
 # Output file specifiers
+string fileType = DR12
 string mock_base = mocks/LNKNLogs_
 string mock_ext = fits
-int start_num = 1
-int num_mocks = 10
+int start_num = 2
+int num_mocks = 1
 int digits = 4
 
 # FFTW wisdom file name
@@ -35,3 +36,6 @@ string in_pk_file = camb_matterpower_z0.65.dat
 # Multi-thread parameters
 bool max_threads = true
 int num_threads = 8
+
+# If used to generate randoms
+string randomsFile = newRandoms.dat
